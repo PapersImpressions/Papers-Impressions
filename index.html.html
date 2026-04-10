@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Papers & Impressions</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+<style>
+body { margin:0; font-family:Arial; background:#0d0d0d; color:white; }
+.header { background:#d32f2f; padding:15px; text-align:center; font-weight:bold; }
+.container { max-width:900px; margin:auto; padding:15px; }
+
+.main { display:flex; gap:10px; }
+.left { width:35%; }
+.right { width:65%; }
+
+@media(max-width:600px){
+.main { flex-direction:column; }
+.left, .right { width:100%; }
+}
+
+.card { background:#1c1c1c; padding:15px; border-radius:12px; margin-bottom:15px; }
+.card h3 { color:#ff5252; }
+
+input, select {
+width:100%; padding:12px; margin-top:8px;
+border-radius:8px; border:none;
+background:#2a2a2a; color:white;
+}
+
+button {
+width:100%; padding:14px; margin-top:8px;
+border-radius:10px; border:none; font-weight:bold;
+}
+
+.btn-main { background:#d32f2f; color:white; }
+.btn-gray { background:#444; color:white; }
+
+.result {
+background:#1c1c1c; padding:15px;
+border-radius:12px; margin-top:15px;
+}
+
+.saved-item {
+background:#333; padding:10px;
+margin-top:8px; border-radius:8px;
+}
+
+.small-btn { margin-top:5px; padding:8px; font-size:13px; }
+
+#suggestions div:hover {
+background:#444;
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">Papers & Impressions</div>
+
+<div class="container">
+<div class="main">
+
+<!-- LEFT -->
+<div class="left">
+<div class="card">
+<h3>Profit Summary</h3>
+
+<select id="viewMode" onchange="updateSummary()">
+<option value="date">Date Wise</option>
+<option value="month">Month Wise</option>
+<option value="customer">Customer Wise</option>
+</select>
+
+<input id="searchCustomer" placeholder="Search Customer..." oninput="showSuggestions()">
+<div id="suggestions" style="background:#222; border-radius:8px; margin-top:5px;"></div>
+
+<div id="summaryBox">No data</div>
+</div>
+</div>
+
+<!-- RIGHT -->
+<div class="right">
+
+<div class="card">
+<input id="customer" placeholder="Customer Name">
+<input id="phone" placeholder="Phone Number">
+<input id="address" placeholder="Customer Address">
+<input id="qty" type="number" placeholder="Quantity">
+</div>
+
+<div class="card">
+<h3>Paper</h3>
+<input id="paper" type="number" placeholder="Paper Cost per unit">
+</div>
+
+<div class="card">
+<h3>Printing</h3>
+<input id="impression" type="number" placeholder="Printing Cost for 1000">
+<select id="colors">
+<option value="1">1 Color</option>
+<option value="2">2 Colors</option>
+<option value="3">3 Colors</option>
+<option value="4">4 Colors</option>
+</select>
+</div>
+
+<div class="card">
+<h3>Other Costs</h3>
+<input id="plate" placeholder="Plate Cost">
+<input id="die" placeholder="Die Cutting">
+<input id="transport" placeholder="Transport">
+<input id="setup" placeholder="Setup">
+<input id="finish" placeholder="Finishing">
+</div>
+
+<div class="card">
+<input id="manualSell" placeholder="Manual Unit Selling Price">
+</div>
+
+<button class="btn-main" onclick="calc()">Calculate</button>
+<button class="btn-main" onclick="downloadPDF()">📄 Export PDF</button>
+<button class="btn-gray" onclick="saveData()">💾 Save</button>
+
+<div class="result" id="result">Enter values...</div>
+
+<div class="card">
+<h3>Saved Jobs</h3>
+<div id="savedList"></div>
+</div>
+
+</div>
+</div>
+</div>
+
+<script>
+
+// ELEMENTS
+let customer = document.getElementById("customer");
+let phone = document.getElementById("phone");
+let address = document.getElementById("address");
+let qty = document.getElementById("qty");
+let paper = document.getElementById("paper");
+let impression = document.getElementById("impression");
+let colors = document.getElementById("colors");
+let plate = document.getElementById("plate");
+let die = document.getElementById("die");
+let transport = document.getElementById("transport");
+let setup = document.getElementById("setup");
+let finish = document.getElementById("finish");
+let manualSell = document.getElementById("manualSell");
+let result = document.getElementById("result");
+let savedList = document.getElementById("savedList");
+
+// CALCULATE
+function calc(){
+let q = Number(qty.value)||0;
+if(q<=0){ alert("Enter quantity"); return; }
+
+let totalCost =
+(q * (Number(paper.value)||0)) +
+((Number(impression.value)||0)*(Number(colors.value)||1)*q/1000) +
+(Number(plate.value)||0)+(Number(die.value)||0)+
+(Number(transport.value)||0)+(Number(setup.value)||0)+
+(Number(finish.value)||0);
+
+let unitSell = (totalCost*1.27)/q;
+if(Number(manualSell.value)>0) unitSell = Number(manualSell.value);
+
+let selling = unitSell*q;
+let profit = selling-totalCost;
+
+let profitColor = profit >= 0 ? "limegreen" : "red";
+
+result.innerHTML = `
+<b>Total Cost:</b> ${totalCost.toFixed(2)} LKR<br>
+<b>Selling Price:</b> ${selling.toFixed(2)} LKR<br><br>
+<b>Profit:</b> <span style="color:${profitColor}; font-weight:bold;">
+${profit.toFixed(2)} LKR
+</span><br>
+<b>Unit Selling:</b> ${unitSell.toFixed(2)} LKR
+`;
+}
+
+// SUMMARY
+function updateSummary(){
+let list = JSON.parse(localStorage.getItem("jobs"))||[];
+let box = document.getElementById("summaryBox");
+let mode = document.getElementById("viewMode").value;
+let search = document.getElementById("searchCustomer").value.toLowerCase();
+
+if(list.length===0){ box.innerHTML="No data"; return; }
+
+let grouped={}, total=0;
+
+list.forEach(d=>{
+if(search && !d.customer.toLowerCase().includes(search)) return;
+
+let key;
+
+if(mode==="month"){
+key = new Date(d.date).toLocaleDateString("en-GB",{month:"short",year:"numeric"});
+}
+else if(mode==="customer"){
+key = d.customer;
+}
+else{
+key = new Date(d.date).toLocaleDateString("en-GB",{day:"2-digit",month:"short"});
+}
+
+if(!grouped[key]) grouped[key]=0;
+
+grouped[key]+=Number(d.profit)||0;
+total+=Number(d.profit)||0;
+});
+
+let html = `<b>Total: ${total.toFixed(2)} LKR</b><br><br>`;
+
+Object.entries(grouped).forEach(([k,v])=>{
+let color = v >= 0 ? "limegreen" : "red";
+html += `<span style="color:${color}; font-weight:bold;">${k}: ${v.toFixed(2)} LKR</span><br>`;
+});
+
+box.innerHTML = html;
+}
+
+// AUTOCOMPLETE
+function showSuggestions(){
+let list = JSON.parse(localStorage.getItem("jobs"))||[];
+let input = document.getElementById("searchCustomer").value.toLowerCase();
+let box = document.getElementById("suggestions");
+
+box.innerHTML = "";
+
+if(!input){
+updateSummary();
+return;
+}
+
+let customers = [...new Set(list.map(d => d.customer))];
+
+customers
+.filter(name => name.toLowerCase().includes(input))
+.forEach(name=>{
+box.innerHTML += `
+<div style="padding:8px; cursor:pointer;" onclick="selectCustomer('${name}')">
+${name}
+</div>`;
+});
+}
+
+function selectCustomer(name){
+document.getElementById("searchCustomer").value = name;
+document.getElementById("suggestions").innerHTML = "";
+updateSummary();
+}
+
+// CLICK OUTSIDE
+document.addEventListener("click", function(e){
+if(!e.target.closest("#searchCustomer")){
+document.getElementById("suggestions").innerHTML = "";
+}
+});
+
+// SAVE
+function saveData(){
+let profitText = result.innerText.match(/Profit:\s([\d.]+)/);
+let profitValue = profitText ? Number(profitText[1]) : 0;
+
+let data = {
+customer: customer.value,
+phone: phone.value,
+address: address.value,
+qty: qty.value,
+paper: paper.value,
+impression: impression.value,
+colors: colors.value,
+plate: plate.value,
+die: die.value,
+transport: transport.value,
+setup: setup.value,
+finish: finish.value,
+manualSell: manualSell.value,
+profit: profitValue,
+date: new Date().toISOString()
+};
+
+let list = JSON.parse(localStorage.getItem("jobs"))||[];
+list.push(data);
+localStorage.setItem("jobs", JSON.stringify(list));
+
+displaySaved();
+updateSummary();
+alert("Saved!");
+}
+
+// DISPLAY
+function displaySaved(){
+let list = JSON.parse(localStorage.getItem("jobs"))||[];
+savedList.innerHTML="";
+
+list.forEach((d,i)=>{
+savedList.innerHTML+=`
+<div class="saved-item">
+<b>${d.customer}</b><br>
+Qty: ${d.qty}<br>
+${new Date(d.date).toLocaleString()}<br>
+
+<button class="small-btn btn-main" onclick="loadItem(${i})">Load</button>
+<button class="small-btn btn-gray" onclick="deleteItem(${i})">Delete</button>
+</div>`;
+});
+}
+
+// LOAD
+function loadItem(i){
+let d = JSON.parse(localStorage.getItem("jobs"))[i];
+
+customer.value=d.customer||"";
+phone.value=d.phone||"";
+address.value=d.address||"";
+qty.value=d.qty||"";
+paper.value=d.paper||"";
+impression.value=d.impression||"";
+colors.value=d.colors||1;
+plate.value=d.plate||"";
+die.value=d.die||"";
+transport.value=d.transport||"";
+setup.value=d.setup||"";
+finish.value=d.finish||"";
+manualSell.value=d.manualSell||"";
+
+calc();
+}
+
+// DELETE
+function deleteItem(i){
+let list = JSON.parse(localStorage.getItem("jobs"))||[];
+
+if(confirm("Delete this job?")){
+list.splice(i,1);
+localStorage.setItem("jobs", JSON.stringify(list));
+displaySaved();
+updateSummary();
+}
+}
+
+window.onload = function(){
+displaySaved();
+updateSummary();
+};
+
+</script>
+
+</body>
+</html>
